@@ -1,5 +1,5 @@
 streamlit
-keras
+tf-keras
 Pillow
 numpy
 pandas
