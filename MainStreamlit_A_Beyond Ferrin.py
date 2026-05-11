@@ -1,8 +1,7 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
-import keras
-from tensorflow import keras
+import tf_keras as keras
 import os
 import io
 import time
