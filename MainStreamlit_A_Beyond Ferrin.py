@@ -1,15 +1,14 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
-import tensorflow as tf
-from tensorflow import keras
+import onnxruntime as ort
 import os
 import io
 import time
 
 # ── Konfigurasi ───────────────────────────────────────────────────
 IMG_SIZE    = 128
-MODEL_PATH  = 'D:\KULIAH\SEM 6\DEEP LEARNING\streamlit\BestModel_NamaKEL.h5'   # ganti dengan nama file model kamu
+MODEL_PATH  = 'BestModel_VGG16.onnx'
 CLASS_NAMES = [
     'GIGI BERKARANG',
     'GIGI BERLUBANG',
@@ -68,20 +67,13 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
 
-/* Base */
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
 }
-
-/* Hide default streamlit header/footer */
 #MainMenu, footer, header { visibility: hidden; }
-
-/* App background */
 .stApp {
     background: #F7F5F0;
 }
-
-/* Sidebar */
 [data-testid="stSidebar"] {
     background: #1A1A2E;
     border-right: 1px solid #2D2D4E;
@@ -95,8 +87,6 @@ html, body, [class*="css"] {
     color: #C8B8E8 !important;
     font-family: 'DM Serif Display', serif !important;
 }
-
-/* Navbar / Header custom */
 .app-header {
     background: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #0F3460 100%);
     padding: 2rem 2.5rem 1.5rem;
@@ -117,8 +107,6 @@ html, body, [class*="css"] {
     font-size: 0.95rem;
     font-weight: 300;
 }
-
-/* Cards */
 .card {
     background: #FFFFFF;
     border-radius: 16px;
@@ -137,8 +125,6 @@ html, body, [class*="css"] {
     from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
 }
-
-/* Confidence bar */
 .conf-bar-wrap {
     background: #F0F0F0;
     border-radius: 99px;
@@ -151,8 +137,6 @@ html, body, [class*="css"] {
     border-radius: 99px;
     transition: width 0.6s ease;
 }
-
-/* Label kelas */
 .class-badge {
     display: inline-block;
     padding: 4px 14px;
@@ -163,8 +147,6 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     margin-bottom: 0.5rem;
 }
-
-/* Metric box */
 .metric-box {
     background: #F7F5F0;
     border-radius: 12px;
@@ -185,8 +167,6 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
-
-/* Upload zone */
 [data-testid="stFileUploader"] {
     background: #FFFFFF;
     border-radius: 16px;
@@ -196,8 +176,6 @@ html, body, [class*="css"] {
 [data-testid="stFileUploader"]:hover {
     border-color: #0F3460;
 }
-
-/* Button */
 .stButton > button {
     background: linear-gradient(135deg, #0F3460, #1A1A2E);
     color: white;
@@ -214,8 +192,6 @@ html, body, [class*="css"] {
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(15,52,96,0.35);
 }
-
-/* Divider */
 .section-title {
     font-family: 'DM Serif Display', serif;
     font-size: 1.3rem;
@@ -224,8 +200,6 @@ html, body, [class*="css"] {
     padding-bottom: 0.5rem;
     border-bottom: 2px solid #E8E4DC;
 }
-
-/* Disclaimer */
 .disclaimer {
     background: #FFF8E8;
     border-left: 4px solid #E8A838;
@@ -239,49 +213,24 @@ html, body, [class*="css"] {
 """, unsafe_allow_html=True)
 
 
-# ── Load Model ────────────────────────────────────────────────────
+# ── Load Model (ONNX) ─────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_model(path):
     if not os.path.exists(path):
         return None
-    
-    # Fix kompatibilitas Keras versi berbeda
-    # Error: 'quantization_config' tidak dikenal di versi lokal
-    import tensorflow as tf
-    from tensorflow.keras.layers import Dense, Conv2D, DepthwiseConv2D
+    return ort.InferenceSession(path)
 
-    class CompatDense(Dense):
-        def __init__(self, *args, **kwargs):
-            kwargs.pop('quantization_config', None)
-            super().__init__(*args, **kwargs)
-
-    class CompatConv2D(Conv2D):
-        def __init__(self, *args, **kwargs):
-            kwargs.pop('quantization_config', None)
-            super().__init__(*args, **kwargs)
-
-    class CompatDepthwiseConv2D(DepthwiseConv2D):
-        def __init__(self, *args, **kwargs):
-            kwargs.pop('quantization_config', None)
-            super().__init__(*args, **kwargs)
-
-    custom_objects = {
-        'Dense'           : CompatDense,
-        'Conv2D'          : CompatConv2D,
-        'DepthwiseConv2D' : CompatDepthwiseConv2D,
-    }
-
-    return tf.keras.models.load_model(path, custom_objects=custom_objects)
 # ── Helper Functions ──────────────────────────────────────────────
 def preprocess_image(img: Image.Image, size: int = IMG_SIZE) -> np.ndarray:
     img = img.convert('RGB').resize((size, size), Image.LANCZOS)
     arr = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(arr, axis=0)
 
-def predict(model, img: Image.Image):
-    arr   = preprocess_image(img)
-    probs = model.predict(arr, verbose=0)[0]
-    idx   = int(np.argmax(probs))
+def predict(session, img: Image.Image):
+    arr        = preprocess_image(img)
+    input_name = session.get_inputs()[0].name
+    probs      = session.run(None, {input_name: arr})[0][0]
+    idx        = int(np.argmax(probs))
     return CLASS_NAMES[idx], float(probs[idx]) * 100, probs
 
 def conf_color(conf: float) -> str:
@@ -329,20 +278,19 @@ with st.sidebar:
 
     model = load_model(MODEL_PATH)
     if model is not None:
-        total_params = model.count_params()
         st.markdown(f"""
         | Atribut | Nilai |
         |---|---|
         | Arsitektur | VGG-16 |
         | Input Size | {IMG_SIZE}×{IMG_SIZE} px |
-        | Parameter | {total_params:,} |
         | Kelas | {len(CLASS_NAMES)} |
         | Weights | From Scratch |
+        | Format | ONNX |
         """)
         st.success("✅ Model berhasil dimuat")
     else:
         st.error(f"❌ Model tidak ditemukan:\n`{MODEL_PATH}`")
-        st.info("Pastikan file `.h5` ada di direktori yang sama dengan `app.py`")
+        st.info("Pastikan file `.onnx` ada di direktori yang sama dengan app.")
 
     st.markdown("---")
     st.markdown(
@@ -366,7 +314,7 @@ st.markdown("""
 if model is None:
     st.error(
         f"**Model tidak ditemukan.** Pastikan file `{MODEL_PATH}` "
-        "berada di folder yang sama dengan `app.py`."
+        "berada di folder yang sama dengan app."
     )
     st.stop()
 
@@ -438,7 +386,6 @@ with tab1:
             icon  = info['icon']
             ccolor = conf_color(confidence)
 
-            # Result card
             st.markdown(f"""
             <div class="result-card card"
                  style="border-left: 5px solid {color}">
@@ -468,7 +415,6 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
 
-            # Deskripsi & saran
             st.markdown(f"""
             <div class="card" style="margin-top:0.5rem">
                 <div style="font-weight:600;margin-bottom:0.4rem;
@@ -486,12 +432,10 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
 
-            # Probability bars
             st.markdown('<div class="section-title" style="margin-top:1rem">'
                         'Probabilitas Semua Kelas</div>',
                         unsafe_allow_html=True)
             render_prob_bars(probs)
-
 
         elif not uploaded:
             st.markdown("""
@@ -540,9 +484,9 @@ with tab2:
                 </div>
                 """, unsafe_allow_html=True)
 
-    # Model comparison table
     st.markdown('<div class="section-title">Arsitektur Model yang Dilatih</div>',
                 unsafe_allow_html=True)
+    import pandas as pd
     df_model = {
         'Arsitektur'  : ['Custom CNN', 'VGG-16', 'MobileNet'],
         'Tipe Weights': ['From Scratch', 'From Scratch', 'From Scratch'],
@@ -552,6 +496,5 @@ with tab2:
             'Depthwise Separable Conv (Howard et al., 2017)',
         ],
     }
-    import pandas as pd
     st.dataframe(pd.DataFrame(df_model), use_container_width=True,
                  hide_index=True)
