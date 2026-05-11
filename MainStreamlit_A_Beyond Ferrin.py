@@ -9,7 +9,7 @@ import time
 
 # ── Konfigurasi ───────────────────────────────────────────────────
 IMG_SIZE    = 128
-MODEL_PATH  = 'D:\KULIAH\SEM 6\DEEP LEARNING\streamlit\BestModel_NamaKEL.h5'   # ganti dengan nama file model kamu
+MODEL_PATH  = 'BestModel_VGG-16_Beyond Ferrin.h5' 
 CLASS_NAMES = [
     'GIGI BERKARANG',
     'GIGI BERLUBANG',
