@@ -1,5 +1,5 @@
 streamlit
-keras
+tensorflow
+Pillow
 numpy
 pandas
-Pillow
