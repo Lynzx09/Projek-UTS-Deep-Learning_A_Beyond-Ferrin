@@ -1,5 +1,5 @@
 streamlit
-tensorflow-cpu
+keras
 Pillow
 numpy
 pandas
